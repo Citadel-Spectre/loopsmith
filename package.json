@@ -1,0 +1,68 @@
+{
+  "name": "loopsmith",
+  "version": "0.2.4",
+  "description": "Record, edit and convert GIF and webm animations",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/smoke.js",
+    "dist:win": "node scripts/ffmpeg-for.js win32 && electron-builder --win zip --x64",
+    "dist:linux": "node scripts/ffmpeg-for.js linux && electron-builder --linux AppImage tar.gz --x64",
+    "dist:mac": "node scripts/ffmpeg-for.js darwin && electron-builder --mac zip"
+  },
+  "author": "Mårten",
+  "license": "ISC",
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0",
+    "ffprobe-static": "^3.1.0"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "productName": "Loopsmith",
+  "build": {
+    "appId": "app.loopsmith",
+    "productName": "Loopsmith",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**",
+      "package.json",
+      "node_modules/ffmpeg-static/**",
+      "node_modules/ffprobe-static/**"
+    ],
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**",
+      "node_modules/ffprobe-static/**"
+    ],
+    "win": {
+      "signAndEditExecutable": false,
+      "files": [
+        "!node_modules/ffprobe-static/bin/{darwin,linux}/**",
+        "!node_modules/ffprobe-static/bin/win32/ia32/**"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "linux": {
+      "files": [
+        "!node_modules/ffprobe-static/bin/{darwin,win32}/**",
+        "!node_modules/ffprobe-static/bin/linux/ia32/**"
+      ],
+      "category": "Graphics",
+      "executableName": "loopsmith",
+      "synopsis": "Record, edit and convert GIF and webm animations",
+      "icon": "build/icons"
+    },
+    "mac": {
+      "files": [
+        "!node_modules/ffprobe-static/bin/{linux,win32}/**"
+      ],
+      "icon": "build/icon.png"
+    },
+    "publish": null
+  }
+}

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data: blob:; media-src 'self' file: blob: mediastream:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <title>Loopsmith</title>
+  <link rel="icon" href="icon.png" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- compact bar shown while recording -->
+  <div id="recbar">
+    <span class="dot"></span><span id="rectime">00:00</span>
+    <button id="recPause">Pause</button>
+    <button id="recStop" class="primary">Stop</button>
+  </div>
+
+  <div id="app">
+    <header id="toolbar">
+      <div class="group">
+        <button id="btnRecord" class="primary" title="Record screen, a window or the webcam">● Record</button>
+        <button id="btnOpen" title="Open video, GIF, webm or images (Ctrl+O)">Open</button>
+      </div>
+      <div class="group">
+        <button id="btnUndo" title="Undo (Ctrl+Z)">↶</button>
+        <button id="btnRedo" title="Redo (Ctrl+Y)">↷</button>
+      </div>
+      <div class="group" data-needs-frames>
+        <span class="label">Image</span>
+        <button data-panel="crop">Crop</button>
+        <button data-panel="resize">Resize</button>
+        <button data-panel="rotate">Rotate</button>
+        <button data-panel="text">Text</button>
+        <button data-panel="draw">Draw</button>
+        <button data-panel="progressbar">Progress bar</button>
+      </div>
+      <div class="spacer"></div>
+      <div class="group" data-needs-frames>
+        <button data-panel="export" class="primary">Export</button>
+      </div>
+    </header>
+
+    <main id="workspace">
+      <section id="stageWrap">
+        <div id="empty">
+          <h1>Loopsmith</h1>
+          <p>Record your screen or open a video, GIF or webm to start editing.</p>
+          <p class="muted">You can also drop files onto this window.</p>
+          <div class="row">
+            <button class="primary big" id="emptyRecord">● Record</button>
+            <button class="big" id="emptyOpen">Open file</button>
+          </div>
+        </div>
+        <div id="stage">
+          <div class="inner">
+            <canvas id="canvas"></canvas>
+            <canvas id="overlay"></canvas>
+          </div>
+        </div>
+      </section>
+      <aside id="panel"></aside>
+    </main>
+
+    <div id="player" data-needs-frames>
+      <div class="pl-left">
+        <button id="btnFirst" title="First frame (Home)">⏮</button>
+        <button id="btnPrev" title="Previous frame (←)">◂</button>
+        <button id="btnPlay" title="Play / pause (Space)">▶</button>
+        <button id="btnNext" title="Next frame (→)">▸</button>
+        <button id="btnLast" title="Last frame (End)">⏭</button>
+        <span id="frameInfo"></span>
+      </div>
+      <div class="pl-center">
+        <span class="label">Frames</span>
+        <button data-panel="timing" title="Frame delay and speed">Timing</button>
+        <button data-panel="reorder" title="Reverse, yoyo, reduce, remove duplicates">Sequence</button>
+        <span class="sep"></span>
+        <button id="btnYoyo" class="toggle" title="Yoyo: play forward, then backward. Adds a separately editable backward strip.">⇄ Yoyo</button>
+        <label id="skipEndsWrap" title="Yoyo: don't repeat the first and last frame when turning around, so the motion stays smooth"><input type="checkbox" id="skipEnds" checked> Skip ends</label>
+        <button id="btnDup" title="Duplicate the selected frames; each copy goes right after its original (Ctrl+D)">x2</button>
+        <button data-act="delete" title="Delete selected (Del)">Delete</button>
+        <button data-act="moveLeft" title="Move selected left (Alt+←)">◀</button>
+        <button data-act="moveRight" title="Move selected right (Alt+→)">▶</button>
+      </div>
+      <div class="pl-right">
+        <span class="diffNav hidden"><button id="diffPrev" title="Previous difference">‹</button><button id="diffInfo" title="Jump to the next frame where the forward and backward rows differ"></button><button id="diffNext" title="Next difference">›</button></span>
+        <label class="muted">Zoom <select id="zoom">
+          <option value="fit">Fit</option><option value="0.5">50%</option><option value="1">100%</option><option value="2">200%</option>
+        </select></label>
+      </div>
+    </div>
+    <footer id="timeline" class="hidden">
+      <div class="lane" data-track="fwd">
+        <div class="strip"></div>
+        <div class="playbox"></div>
+      </div>
+      <div class="lane" data-track="back">
+        <div class="strip"></div>
+        <div class="playbox"></div>
+      </div>
+    </footer>
+    <div id="status"><span id="statusText">No frames</span><span id="progressWrap"><span id="progressLabel"></span><progress id="progress" max="1" value="0"></progress></span></div>
+  </div>
+
+  <div id="modal" class="hidden"><div id="modalBox"></div></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
