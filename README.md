@@ -8,6 +8,7 @@ A desktop app for making, editing and converting animated GIFs and webm clips.
 - **Edit the image:** crop (the box starts at the full picture; drag its edges, corners or the whole box), resize, rotate, flip, add text captions, draw (pen, highlighter, line, arrow, rectangle, ellipse) and add a progress bar.
 - **Export:** GIF (palette and dithering options), animated WebP (lossy or lossless, keeps transparency), webm (VP9, keeps transparency), animated PNG and MP4. Opening a GIF, webm or animated WebP and exporting it as another format converts between them, keeping each frame's timing.
 - Undo and redo for everything.
+- **Theme:** the Theme button (right of Progress bar) opens a panel with presets and pickers for the backdrop, text, outline and highlight colors. The choice is remembered.
 
 ## Keyboard shortcuts
 

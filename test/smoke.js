@@ -157,6 +157,19 @@ const os = require('os');
     setTimeout(() => r({ same: Math.abs(fs.scrollLeft - bs.scrollLeft) < 1, fwdBar: getComputedStyle(fs).scrollbarWidth }), 100);
   }));
   check(sh.same && sh.fwdBar === 'none', 'rows share the bottom scrollbar and scroll together ' + JSON.stringify(sh));
+  // only one outline on the current frame: the center box itself draws none
+  const pb = await ev(() => getComputedStyle(document.querySelector('.lane.active .playbox')).borderTopColor);
+  check(pb === 'rgba(0, 0, 0, 0)', 'center box has no outline of its own');
+  // theme panel: a preset and a custom color change the app colors
+  await page.click('[data-panel="theme"]');
+  await page.click('[data-theme="Light"]');
+  let th = await ev(() => ({ bg: getComputedStyle(document.body).backgroundColor, acc: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() }));
+  check(th.bg === 'rgb(243, 244, 247)', 'Light theme preset applies ' + JSON.stringify(th));
+  await page.screenshot({ path: path.join(out, '2c-theme-light.png') });
+  await page.fill('#panel [data-k="accent"]', '#2266ee');
+  th = await ev(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
+  check(th === '#2266ee', 'custom highlight color applies');
+  await page.click('#thReset'); await ev(() => __loopsmith.closePanel());
   await page.waitForTimeout(300);
   // "Skip ends" off: the backward pass also repeats the first and last frame, still a clean mirror
   const se = await ev(() => {

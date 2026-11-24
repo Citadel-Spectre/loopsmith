@@ -1,6 +1,6 @@
 {
   "name": "loopsmith",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Record, edit and convert GIF and webm animations",
   "main": "main.js",
   "scripts": {

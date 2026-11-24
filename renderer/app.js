@@ -132,7 +132,7 @@ function refresh() {
   $('#btnRedo').disabled = !S.redo.length;
   $('#btnYoyo').classList.toggle('active', S.yoyo);
   $('#skipEnds').checked = S.skipEnds;
-  if (!has && S.panel) closePanel();
+  if (!has && S.panel && S.panel !== 'theme') closePanel();
   renderStrip();
   layoutStage();
   drawCurrent();
@@ -1142,6 +1142,58 @@ panels.progressbar = {
   overlay(o) { const f = S.frames[S.cur]; if (f) drawProgress(o, this.opts(), this.ends().get(f.id) ?? 0); },
 };
 
+// --- Theme ---
+// Four colors drive the whole look; the in-between shades are mixed from them.
+const THEMES = {
+  Dark: { bg: '#16181d', text: '#e6e8ee', line: '#333845', accent: '#f0743a' },
+  Light: { bg: '#f3f4f7', text: '#1d2027', line: '#c9cdd6', accent: '#e8692f' },
+  Midnight: { bg: '#0e1524', text: '#dbe5f5', line: '#2a3a57', accent: '#3d8ef0' },
+  Forest: { bg: '#121914', text: '#e0ebe2', line: '#2d3e32', accent: '#4fb06f' },
+  Graphite: { bg: '#1b1b1d', text: '#eeeeee', line: '#3d3d42', accent: '#b9bec8' },
+  Plum: { bg: '#1a1420', text: '#efe6f5', line: '#3d2f4a', accent: '#c25bd6' },
+};
+const hexRgb = (h) => { h = h.replace('#', ''); return [0, 2, 4].map((k) => parseInt(h.slice(k, k + 2), 16)); };
+const rgbHex = (c) => '#' + c.map((v) => Math.round(clamp(v, 0, 255)).toString(16).padStart(2, '0')).join('');
+const mix = (a, b, t) => { const x = hexRgb(a), y = hexRgb(b); return rgbHex(x.map((v, k) => v + (y[k] - v) * t)); };
+const lum = (h) => { const [r, g, b] = hexRgb(h); return (0.299 * r + 0.587 * g + 0.114 * b) / 255; };
+let theme = { ...THEMES.Dark };
+function applyTheme(t) {
+  theme = { ...THEMES.Dark, ...t };
+  const st = document.documentElement.style, { bg, text, line, accent } = theme;
+  const light = lum(bg) > 0.5;
+  st.setProperty('--bg', bg);
+  st.setProperty('--bg2', mix(bg, text, light ? 0.04 : 0.05));
+  st.setProperty('--bg3', mix(bg, text, light ? 0.09 : 0.11));
+  st.setProperty('--text', text);
+  st.setProperty('--muted', mix(text, bg, 0.38));
+  st.setProperty('--line', line);
+  st.setProperty('--accent', accent);
+  st.setProperty('--accent2', mix(accent, light ? '#000000' : '#ffffff', 0.18));
+  st.colorScheme = light ? 'light' : 'dark';
+  try { localStorage.setItem('loopsmith-theme', JSON.stringify(theme)); } catch {}
+}
+try { const saved = JSON.parse(localStorage.getItem('loopsmith-theme') || 'null'); if (saved) applyTheme(saved); } catch {}
+
+panels.theme = {
+  title: 'Theme',
+  html: () => `
+    <p class="hint">Pick a preset or set the four colors yourself. Your choice is remembered.</p>
+    <div class="swatches">${Object.entries(THEMES).map(([n, t]) => `<button data-theme="${n}"><span class="chips">${[t.bg, t.text, t.line, t.accent].map((c) => `<i style="background:${c}"></i>`).join('')}</span>${n}</button>`).join('')}</div>
+    <h3>Colors</h3>
+    ${field('Backdrop', '<input type="color" data-k="bg">')}
+    ${field('Text', '<input type="color" data-k="text">')}
+    ${field('Outlines', '<input type="color" data-k="line">')}
+    ${field('Highlighted buttons', '<input type="color" data-k="accent">')}
+    <div class="actions"><button id="thReset">Reset</button><button data-close>Close</button></div>`,
+  init(el) {
+    this.sync();
+    $$('[data-theme]', el).forEach((b) => (b.onclick = () => { applyTheme(THEMES[b.dataset.theme]); this.sync(); }));
+    $('#thReset').onclick = () => { applyTheme(THEMES.Dark); this.sync(); };
+  },
+  sync() { for (const k of ['bg', 'text', 'line', 'accent']) $(`#panel [data-k="${k}"]`).value = theme[k]; },
+  onInput() { applyTheme({ bg: val('bg'), text: val('text'), line: val('line'), accent: val('accent') }); },
+};
+
 // --- Export ---
 panels.export = {
   title: 'Export',
@@ -1472,6 +1524,6 @@ document.addEventListener('keydown', (e) => {
 });
 
 // Expose a small hook for automated tests.
-if (api.isTest) window.__loopsmith = { S, setYoyo, setSkipEnds, yoyoDiff, played, mirrorBack, jumpDiff, openFiles, importVideoDialog, importAny, addFrames, actions, panels, openPanel, closePanel, applyPixels, removeDuplicates, undo, redo, refresh };
+if (api.isTest) window.__loopsmith = { S, applyTheme, THEMES, setYoyo, setSkipEnds, yoyoDiff, played, mirrorBack, jumpDiff, openFiles, importVideoDialog, importAny, addFrames, actions, panels, openPanel, closePanel, applyPixels, removeDuplicates, undo, redo, refresh };
 
 refresh();
