@@ -16,6 +16,11 @@ if (process.platform === 'linux') {
   app.commandLine.appendSwitch('enable-features', 'WebRTCPipeWireCapturer,WaylandWindowDecorations');
 }
 
+// The bundled FFmpeg is a static Linux build: when it converts text (e.g. MPEG-TS/.mts channel names) its
+// built-in iconv loads the system's gconv modules, which don't match and crash it. Pointing GCONV_PATH at
+// nothing makes iconv fail softly instead.
+const TOOL_ENV = process.platform === 'linux' ? { ...process.env, GCONV_PATH: '/nonexistent-loopsmith-gconv' } : process.env;
+
 let win;
 let workDir;
 let frameCounter = 0;
@@ -57,7 +62,7 @@ app.on('quit', () => {
 
 function run(bin, args, onProgress) {
   return new Promise((resolve, reject) => {
-    const p = spawn(bin, args, { windowsHide: true });
+    const p = spawn(bin, args, { windowsHide: true, env: TOOL_ENV });
     let out = '';
     let err = '';
     p.stdout.on('data', (d) => (out += d));
@@ -83,19 +88,77 @@ function timeToSec(t) {
   return m ? +m[1] * 3600 + +m[2] * 60 + +m[3] : 0;
 }
 
+/**
+ * Reads the chunk layout of a WebP file. FFmpeg 6 can't decode animated WebP, so animated files are
+ * decoded by Chromium in the renderer instead; this gives the canvas size and exact frame durations.
+ * Returns null when the file is not a WebP.
+ */
+function webpInfo(file) {
+  let b;
+  try {
+    const fd = fs.openSync(file, 'r');
+    try {
+      const head = Buffer.alloc(12);
+      if (fs.readSync(fd, head, 0, 12, 0) < 12 || head.toString('ascii', 0, 4) !== 'RIFF' || head.toString('ascii', 8, 12) !== 'WEBP') return null;
+    } finally { fs.closeSync(fd); }
+    b = fs.readFileSync(file);
+  } catch { return null; }
+  let width = 0, height = 0, animFlag = false;
+  const durations = [];
+  for (let p = 12; p + 8 <= b.length;) {
+    const id = b.toString('ascii', p, p + 4);
+    const n = b.readUInt32LE(p + 4);
+    const d = p + 8;
+    if (id === 'VP8X' && d + 10 <= b.length) {
+      animFlag = !!(b[d] & 0x02);
+      width = 1 + (b[d + 4] | (b[d + 5] << 8) | (b[d + 6] << 16));
+      height = 1 + (b[d + 7] | (b[d + 8] << 8) | (b[d + 9] << 16));
+    } else if (id === 'ANMF' && d + 16 <= b.length) {
+      durations.push(b[d + 12] | (b[d + 13] << 8) | (b[d + 14] << 16));
+    }
+    p = d + n + (n & 1);
+  }
+  const animated = durations.length > 0 || animFlag;
+  // like browsers do, treat a 0 ms frame as 100 ms so the animation still plays
+  const ms = durations.map((x) => (x > 0 ? x : 100));
+  const total = ms.reduce((a, x) => a + x, 0);
+  return { animated, width, height, durations: ms, frames: durations.length, duration: total / 1000 };
+}
+
+const IMAGE_CODECS = new Set(['png', 'mjpeg', 'jpegls', 'bmp', 'webp', 'tiff', 'ppm', 'pgm', 'pam', 'qoi', 'jpeg2000', 'targa', 'sgi', 'pcx']);
+
 async function probe(file) {
-  const out = await run(FFPROBE, [
-    '-v', 'error', '-select_streams', 'v:0',
-    '-show_entries', 'stream=width,height,codec_name,avg_frame_rate,r_frame_rate:format=duration',
-    '-of', 'json', file,
-  ]);
+  const wp = webpInfo(file);
+  if (wp && wp.animated) {
+    return {
+      width: wp.width, height: wp.height, codec: 'webp-anim', kind: 'animation',
+      fps: wp.duration > 0 ? wp.frames / wp.duration : 10, duration: wp.duration, frames: wp.frames, durations: wp.durations,
+    };
+  }
+  let out;
+  try {
+    out = await run(FFPROBE, [
+      '-v', 'error', '-select_streams', 'v:0',
+      '-show_entries', 'stream:format=duration,format_name',
+      '-of', 'json', file,
+    ]);
+  } catch (e) {
+    throw new Error('This file is not a video, animation or image that Loopsmith can read.\n\n' + e.message);
+  }
   const j = JSON.parse(out);
   const s = (j.streams && j.streams[0]) || {};
+  if (!s.codec_name || !s.width || s.codec_name === 'ansi' || /^(tty|lavfi)$/.test((j.format && j.format.format_name) || '')) throw new Error('No video or animation was found in this file.');
   const rate = (r) => { const [a, b] = String(r || '0/1').split('/').map(Number); return b ? a / b : 0; };
+  const rot = Math.abs(parseFloat(((s.side_data_list || []).find((x) => x.rotation !== undefined) || {}).rotation ?? (s.tags && s.tags.rotate) ?? 0)) % 180;
+  const duration = parseFloat(j.format && j.format.duration) || 0;
+  const fmt = (j.format && j.format.format_name) || '';
+  // a single picture (png, jpg, still webp...) rather than something with several frames
+  const still = IMAGE_CODECS.has(s.codec_name) && (/_pipe$|^image2$|^webp/.test(fmt) || !(duration > 0)) && !(parseInt(s.nb_frames, 10) > 1);
   return {
-    width: s.width, height: s.height, codec: s.codec_name,
+    width: rot === 90 ? s.height : s.width, height: rot === 90 ? s.width : s.height, codec: s.codec_name,
+    kind: still ? 'image' : 'animation',
     fps: rate(s.avg_frame_rate) || rate(s.r_frame_rate),
-    duration: parseFloat(j.format && j.format.duration) || 0,
+    duration,
   };
 }
 
@@ -125,11 +188,16 @@ function listFrames(dir) {
 
 // ---------- IPC ----------
 
+const MEDIA_EXT = ['mp4', 'm4v', 'mov', 'mkv', 'avi', 'webm', 'webp', 'gif', 'apng', 'wmv', 'flv', 'mpg', 'mpeg', 'm2v', 'ts', 'mts', 'm2ts',
+  'ogv', 'ogg', '3gp', '3g2', 'asf', 'vob', 'mxf', 'dv', 'f4v', 'y4m', 'png', 'jpg', 'jpeg', 'bmp', 'tif', 'tiff'];
+// ask for both cases so case-sensitive Linux file pickers still show FILE.MP4
+const caseBoth = (l) => l.flatMap((e) => [e, e.toUpperCase()]);
+
 ipcMain.handle('open-media', async () => {
   const r = await dialog.showOpenDialog(win, {
     properties: ['openFile', 'multiSelections'],
     filters: [
-      { name: 'Media', extensions: ['mp4', 'mov', 'mkv', 'avi', 'webm', 'gif', 'apng', 'png', 'jpg', 'jpeg', 'bmp', 'wmv', 'm4v'] },
+      { name: 'Media', extensions: caseBoth(MEDIA_EXT) },
       { name: 'All files', extensions: ['*'] },
     ],
   });
@@ -144,6 +212,7 @@ ipcMain.handle('import-video', async (_e, opts) => {
   const dir = path.join(workDir, 'imp-' + Date.now());
   fs.mkdirSync(dir);
   const info = await probe(opts.file);
+  if (info.codec === 'webp-anim') throw new Error('Animated WebP is decoded in the window, not by FFmpeg.');
   const filters = [];
   const keepTiming = opts.mode === 'all';
   if (!keepTiming) filters.push(`fps=${opts.fps}`);
@@ -178,12 +247,25 @@ ipcMain.handle('import-video', async (_e, opts) => {
 });
 
 ipcMain.handle('import-images', async (_e, files) => {
-  return files.map((f) => {
-    const dst = path.join(workDir, `img-${Date.now()}-${++frameCounter}${path.extname(f)}`);
-    fs.copyFileSync(f, dst);
-    return { path: dst, delay: 100 };
-  });
+  const out = [];
+  for (const f of files) {
+    const ext = path.extname(f).toLowerCase();
+    if (['.png', '.jpg', '.jpeg', '.bmp'].includes(ext)) {
+      const dst = path.join(workDir, `img-${Date.now()}-${++frameCounter}${ext}`);
+      fs.copyFileSync(f, dst);
+      out.push({ path: dst, delay: 100 });
+    } else {
+      // still WebP, TIFF and friends: store as PNG so every later FFmpeg step can read them
+      const dst = path.join(workDir, `img-${Date.now()}-${++frameCounter}.png`);
+      await run(FFMPEG, ['-hide_banner', '-y', '-i', f, '-frames:v', '1', '-pix_fmt', 'rgba', dst]);
+      out.push({ path: dst, delay: 100 });
+    }
+  }
+  return out;
 });
+
+// Raw bytes of a file the user opened (animated WebP is decoded by Chromium in the renderer).
+ipcMain.handle('read-file', async (_e, file) => new Uint8Array(fs.readFileSync(file)));
 
 // Renderer sends edited PNG bytes; we store them as a new immutable frame file.
 ipcMain.handle('save-frame', async (_e, bytes) => {

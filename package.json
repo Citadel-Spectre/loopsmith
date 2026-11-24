@@ -1,11 +1,11 @@
 {
   "name": "loopsmith",
-  "version": "0.2.4",
+  "version": "0.2.6",
   "description": "Record, edit and convert GIF and webm animations",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node test/smoke.js",
+    "test": "node test/smoke.js && node test/formats.js",
     "dist:win": "node scripts/ffmpeg-for.js win32 && electron-builder --win zip --x64",
     "dist:linux": "node scripts/ffmpeg-for.js linux && electron-builder --linux AppImage tar.gz --x64",
     "dist:mac": "node scripts/ffmpeg-for.js darwin && electron-builder --mac zip"

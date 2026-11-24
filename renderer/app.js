@@ -132,7 +132,7 @@ function refresh() {
   $('#btnRedo').disabled = !S.redo.length;
   $('#btnYoyo').classList.toggle('active', S.yoyo);
   $('#skipEnds').checked = S.skipEnds;
-  if (!has && S.panel) closePanel();
+  if (!has && S.panel && S.panel !== 'theme') closePanel();
   renderStrip();
   layoutStage();
   drawCurrent();
@@ -1142,6 +1142,58 @@ panels.progressbar = {
   overlay(o) { const f = S.frames[S.cur]; if (f) drawProgress(o, this.opts(), this.ends().get(f.id) ?? 0); },
 };
 
+// --- Theme ---
+// Four colors drive the whole look; the in-between shades are mixed from them.
+const THEMES = {
+  Dark: { bg: '#16181d', text: '#e6e8ee', line: '#333845', accent: '#f0743a' },
+  Light: { bg: '#f3f4f7', text: '#1d2027', line: '#c9cdd6', accent: '#e8692f' },
+  Midnight: { bg: '#0e1524', text: '#dbe5f5', line: '#2a3a57', accent: '#3d8ef0' },
+  Forest: { bg: '#121914', text: '#e0ebe2', line: '#2d3e32', accent: '#4fb06f' },
+  Graphite: { bg: '#1b1b1d', text: '#eeeeee', line: '#3d3d42', accent: '#b9bec8' },
+  Plum: { bg: '#1a1420', text: '#efe6f5', line: '#3d2f4a', accent: '#c25bd6' },
+};
+const hexRgb = (h) => { h = h.replace('#', ''); return [0, 2, 4].map((k) => parseInt(h.slice(k, k + 2), 16)); };
+const rgbHex = (c) => '#' + c.map((v) => Math.round(clamp(v, 0, 255)).toString(16).padStart(2, '0')).join('');
+const mix = (a, b, t) => { const x = hexRgb(a), y = hexRgb(b); return rgbHex(x.map((v, k) => v + (y[k] - v) * t)); };
+const lum = (h) => { const [r, g, b] = hexRgb(h); return (0.299 * r + 0.587 * g + 0.114 * b) / 255; };
+let theme = { ...THEMES.Dark };
+function applyTheme(t) {
+  theme = { ...THEMES.Dark, ...t };
+  const st = document.documentElement.style, { bg, text, line, accent } = theme;
+  const light = lum(bg) > 0.5;
+  st.setProperty('--bg', bg);
+  st.setProperty('--bg2', mix(bg, text, light ? 0.04 : 0.05));
+  st.setProperty('--bg3', mix(bg, text, light ? 0.09 : 0.11));
+  st.setProperty('--text', text);
+  st.setProperty('--muted', mix(text, bg, 0.38));
+  st.setProperty('--line', line);
+  st.setProperty('--accent', accent);
+  st.setProperty('--accent2', mix(accent, light ? '#000000' : '#ffffff', 0.18));
+  st.colorScheme = light ? 'light' : 'dark';
+  try { localStorage.setItem('loopsmith-theme', JSON.stringify(theme)); } catch {}
+}
+try { const saved = JSON.parse(localStorage.getItem('loopsmith-theme') || 'null'); if (saved) applyTheme(saved); } catch {}
+
+panels.theme = {
+  title: 'Theme',
+  html: () => `
+    <p class="hint">Pick a preset or set the four colors yourself. Your choice is remembered.</p>
+    <div class="swatches">${Object.entries(THEMES).map(([n, t]) => `<button data-theme="${n}"><span class="chips">${[t.bg, t.text, t.line, t.accent].map((c) => `<i style="background:${c}"></i>`).join('')}</span>${n}</button>`).join('')}</div>
+    <h3>Colors</h3>
+    ${field('Backdrop', '<input type="color" data-k="bg">')}
+    ${field('Text', '<input type="color" data-k="text">')}
+    ${field('Outlines', '<input type="color" data-k="line">')}
+    ${field('Highlighted buttons', '<input type="color" data-k="accent">')}
+    <div class="actions"><button id="thReset">Reset</button><button data-close>Close</button></div>`,
+  init(el) {
+    this.sync();
+    $$('[data-theme]', el).forEach((b) => (b.onclick = () => { applyTheme(THEMES[b.dataset.theme]); this.sync(); }));
+    $('#thReset').onclick = () => { applyTheme(THEMES.Dark); this.sync(); };
+  },
+  sync() { for (const k of ['bg', 'text', 'line', 'accent']) $(`#panel [data-k="${k}"]`).value = theme[k]; },
+  onInput() { applyTheme({ bg: val('bg'), text: val('text'), line: val('line'), accent: val('accent') }); },
+};
+
 // --- Export ---
 panels.export = {
   title: 'Export',
@@ -1192,26 +1244,94 @@ panels.export = {
 };
 
 // ---------- import ----------
-const VIDEO_EXT = /\.(mp4|mov|mkv|avi|webm|gif|apng|wmv|m4v|flv|mpg|mpeg|ogv)$/i;
-const IMG_EXT = /\.(png|jpe?g|bmp|webp)$/i;
+// Plain pictures go straight in as frames; anything else (or a picture format that may be animated,
+// like WebP) is probed first so videos, GIF, WebM, APNG and animated WebP all open in the import dialog.
+const IMG_EXT = /\.(png|jpe?g|bmp)$/i;
 
 function modal(html) { $('#modalBox').innerHTML = html; $('#modal').classList.remove('hidden'); }
 function closeModal() { $('#modal').classList.add('hidden'); $('#modalBox').innerHTML = ''; }
 
 async function openFiles(paths) {
   if (!paths || !paths.length) return;
-  const vids = paths.filter((p) => VIDEO_EXT.test(p));
-  const imgs = paths.filter((p) => IMG_EXT.test(p)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  if (vids.length) return importVideoDialog(vids[0]);
-  if (imgs.length) {
-    await busy('Importing images', async () => addFrames(await api.importImages(imgs), S.frames.length ? 'append' : 'replace'));
+  const imgs = [], vids = [], bad = [];
+  for (const p of paths) {
+    if (IMG_EXT.test(p)) { imgs.push(p); continue; }
+    try {
+      const info = await api.probe(p);
+      (info.kind === 'image' ? imgs : vids).push({ p, info });
+    } catch (e) { bad.push(p.split(/[\\/]/).pop() + ': ' + e.message.split('\n')[0]); }
+  }
+  const imgPaths = imgs.map((x) => (typeof x === 'string' ? x : x.p)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  if (vids.length) return importVideoDialog(vids[0].p, {}, vids[0].info);
+  if (imgPaths.length) {
+    await busy('Importing images', async () => addFrames(await api.importImages(imgPaths), S.frames.length ? 'append' : 'replace'));
+  } else if (bad.length) {
+    alert('Could not open:\n\n' + bad.join('\n'));
   }
 }
 
-async function importVideoDialog(file, preset = {}) {
-  let info;
-  try { info = await api.probe(file); } catch (e) { alert('Could not read this file:\n\n' + e.message); return; }
-  const animated = /\.(gif|apng|webm)$/i.test(file) && !preset.fps;
+/**
+ * Animated WebP: FFmpeg 6 can't decode it, but Chromium can. ImageDecoder gives each fully composited
+ * frame; durations come from the file itself (info.durations). Same options as the FFmpeg import.
+ */
+async function importAnimatedWebp(opts, info) {
+  if (typeof ImageDecoder === 'undefined') throw new Error('This system cannot decode animated WebP.');
+  const data = await api.readFile(opts.file);
+  const dec = new ImageDecoder({ data, type: 'image/webp' });
+  try {
+    await dec.tracks.ready;
+    const count = dec.tracks.selectedTrack.frameCount || info.frames;
+    const durs = Array.from({ length: count }, (_, i) => (info.durations && info.durations[i]) || 100);
+    const starts = []; let t = 0;
+    for (const d of durs) { starts.push(t); t += d; }
+    const total = t;
+    const from = Math.max(0, (opts.start || 0) * 1000);
+    const to = opts.end > 0 && opts.end * 1000 > from ? Math.min(total, opts.end * 1000) : total;
+    // which source frame to show, and for how long
+    const plan = [];
+    if (opts.mode === 'fps') {
+      const step = 1000 / (opts.fps || 15);
+      let k = 0;
+      for (let x = from; x < to - 0.001; x = from + ++k * step) {
+        let i = starts.length - 1; while (i > 0 && starts[i] > x) i--;
+        plan.push({ i, delay: Math.round(Math.min(step, to - x)) });
+      }
+    } else {
+      for (let i = 0; i < count; i++) {
+        const a = Math.max(starts[i], from), b = Math.min(starts[i] + durs[i], to);
+        if (b > a) plan.push({ i, delay: Math.round(b - a) });
+      }
+    }
+    const W = info.width, H = info.height;
+    const k = opts.maxWidth && W > opts.maxWidth ? opts.maxWidth / W : 1;
+    const outW = Math.max(1, Math.round(W * k)), outH = Math.max(1, k === 1 ? H : Math.round((H * k) / 2) * 2);
+    const c = new OffscreenCanvas(outW, outH);
+    const x = c.getContext('2d');
+    x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
+    const saved = new Map(); // a source frame sampled more than once is stored once
+    const frames = [];
+    for (let n = 0; n < plan.length; n++) {
+      const { i, delay } = plan[n];
+      if (!saved.has(i)) {
+        const { image } = await dec.decode({ frameIndex: i, completeFramesOnly: true });
+        x.clearRect(0, 0, outW, outH);
+        x.drawImage(image, 0, 0, outW, outH);
+        image.close();
+        const blob = await c.convertToBlob({ type: 'image/png' });
+        saved.set(i, await api.saveFrame(new Uint8Array(await blob.arrayBuffer())));
+      }
+      frames.push({ path: saved.get(i), delay: Math.max(10, delay) });
+      showProgress('Importing', (n + 1) / plan.length);
+    }
+    return frames;
+  } finally { dec.close(); }
+}
+
+const importAny = (opts, info) => (info.codec === 'webp-anim' ? importAnimatedWebp(opts, info) : api.importVideo(opts));
+
+async function importVideoDialog(file, preset = {}, info = null) {
+  if (!info) { try { info = await api.probe(file); } catch (e) { alert('Could not read this file:\n\n' + e.message); return; } }
+  const animated = (['gif', 'apng', 'webp-anim'].includes(info.codec) || /\.(gif|apng|webm|webp)$/i.test(file)) && !preset.fps;
   const name = file.split(/[\\/]/).pop();
   modal(`
     <h2>Import ${esc(name)}</h2>
@@ -1241,7 +1361,7 @@ async function importVideoDialog(file, preset = {}) {
     };
     const where = $('#iWhere') ? $('#iWhere').value : 'replace';
     closeModal();
-    await busy('Importing', async () => addFrames(await api.importVideo(opts), where));
+    await busy('Importing', async () => addFrames(await importAny(opts, info), where));
   };
 }
 
@@ -1404,6 +1524,6 @@ document.addEventListener('keydown', (e) => {
 });
 
 // Expose a small hook for automated tests.
-if (api.isTest) window.__loopsmith = { S, setYoyo, setSkipEnds, yoyoDiff, played, mirrorBack, jumpDiff, openFiles, importVideoDialog, addFrames, actions, panels, openPanel, closePanel, applyPixels, removeDuplicates, undo, redo, refresh };
+if (api.isTest) window.__loopsmith = { S, applyTheme, THEMES, setYoyo, setSkipEnds, yoyoDiff, played, mirrorBack, jumpDiff, openFiles, importVideoDialog, importAny, addFrames, actions, panels, openPanel, closePanel, applyPixels, removeDuplicates, undo, redo, refresh };
 
 refresh();
