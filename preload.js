@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('api', {
   probe: invoke('probe'),
   importVideo: invoke('import-video'),
   importImages: invoke('import-images'),
+  readFile: invoke('read-file'),
   saveFrame: invoke('save-frame'),
   saveRecording: invoke('save-recording'),
   screenSources: invoke('screen-sources'),
