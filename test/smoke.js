@@ -201,6 +201,63 @@ const os = require('os');
   await page.screenshot({ path: path.join(out, '2b-yoyo-diff.png') });
   await ev(() => __loopsmith.undo()); await ev(() => __loopsmith.undo());
   check((await ev(() => __loopsmith.yoyoDiff().list.length)) === 0, 'undo restores the mirror');
+
+  // hide button on a frame: greyed out, skipped by playback and export, click again to restore
+  const before0 = await ev(() => ({ shown: __loopsmith.shown().length, total: __loopsmith.shown().reduce((a, f) => a + f.delay, 0), n: __loopsmith.S.fwd.length }));
+  await ev(() => { const L = __loopsmith; L.S.track = 'fwd'; L.S.curT.fwd = 2; L.refresh(); });
+  await page.click('.lane[data-track="fwd"] .thumb[data-i="3"] .skipBtn');
+  let hid = await ev(() => { const L = __loopsmith; L.S.curT.fwd = 2; L.advance(); return { skip: !!L.S.fwd[3].skip, grey: document.querySelector('.lane[data-track="fwd"] .thumb[data-i="3"]').classList.contains('skipped'), shown: L.shown().length, n: L.S.fwd.length, next: L.S.curT.fwd }; });
+  check(hid.skip && hid.grey && hid.shown === before0.shown - 1 && hid.n === before0.n && hid.next === 4, 'hide button greys the frame out, keeps it, and playback jumps over it');
+  await page.waitForTimeout(100);
+  await page.screenshot({ path: path.join(out, '2d-hidden.png') });
+  await page.click('.lane[data-track="fwd"] .thumb[data-i="3"] .skipBtn');
+  hid = await ev(() => ({ skip: !!__loopsmith.S.fwd[3].skip, shown: __loopsmith.shown().length }));
+  check(!hid.skip && hid.shown === before0.shown, 'clicking it again restores the frame');
+  // delete hidden frames
+  await ev(() => { const L = __loopsmith; L.toggleSkip([L.S.fwd[4], L.S.back[7]]); });
+  await page.click('[data-act="deleteHidden"]');
+  hid = await ev(() => ({ f: __loopsmith.S.fwd.length, b: __loopsmith.S.back.length, any: __loopsmith.played().some((f) => f.skip) }));
+  check(hid.f === before0.n - 1 && hid.b === before0.n - 3 && !hid.any, 'delete hidden removes only the hidden frames');
+  await ev(() => { __loopsmith.undo(); __loopsmith.undo(); });
+  // equalize: frames deleted on the backward strip get deleted on the forward strip too
+  await ev(() => { const L = __loopsmith; L.S.track = 'back'; L.S.sel = new Set([L.S.back[2].id, L.S.back[9].id]); L.actions.delete(); });
+  check(!(await page.isDisabled('[data-act="equalize"]')), 'equalize is available when a strip lost frames');
+  await page.click('[data-act="equalize"]');
+  hid = await ev(() => ({ f: __loopsmith.S.fwd.length, b: __loopsmith.S.back.length, d: __loopsmith.yoyoDiff().list.length }));
+  check(hid.f === before0.n - 2 && hid.b === before0.n - 4 && hid.d === 0 && (await page.isDisabled('[data-act="equalize"]')), `equalize deletes the matching forward frames (${hid.f} + ${hid.b}, ${hid.d} differences)`);
+  await ev(() => { __loopsmith.undo(); __loopsmith.undo(); });
+  // delete all before / after the current frame
+  await ev(() => { const L = __loopsmith; L.S.track = 'fwd'; L.S.curT.fwd = 10; L.refresh(); });
+  await page.click('[data-act="deleteBefore"]');
+  hid = await ev(() => ({ n: __loopsmith.S.fwd.length, cur: __loopsmith.S.curT.fwd }));
+  check(hid.n === before0.n - 10 && hid.cur === 0, 'delete all before keeps the current frame and what follows');
+  await ev(() => __loopsmith.undo());
+  await ev(() => { const L = __loopsmith; L.S.track = 'fwd'; L.S.curT.fwd = 10; L.refresh(); });
+  await page.click('[data-act="deleteAfter"]');
+  hid = await ev(() => __loopsmith.S.fwd.length);
+  check(hid === 11, 'delete all after keeps the current frame and what came before');
+  await ev(() => __loopsmith.undo());
+  check((await ev(() => __loopsmith.S.fwd.length + '/' + __loopsmith.yoyoDiff().list.length)) === before0.n + '/0', 'undo brings everything back');
+  await ev(() => { __loopsmith.S.sel.clear(); __loopsmith.refresh(); });
+  // set loop: 5/9 plays frames 5..9 over and over; a backward number like -20 works too
+  await page.fill('#loopA', '5'); await page.fill('#loopB', '9'); await page.press('#loopB', 'Enter');
+  const lp = await ev(() => {
+    const L = __loopsmith, seq = [];
+    for (let k = 0; k < 7; k++) { L.advance(); seq.push((L.S.track === 'back' ? '-' : '') + (L.S.curT[L.S.track] + 1)); }
+    return { seq: seq.join(','), marked: document.querySelectorAll('.thumb.inloop').length, n: L.S.fwd.length };
+  });
+  check(lp.seq === '6,7,8,9,5,6,7' && lp.marked === 5 && lp.n === before0.n, `loop 5/9 plays ${lp.seq} without removing frames`);
+  await page.waitForTimeout(100);
+  await page.screenshot({ path: path.join(out, '2e-loop.png') });
+  await page.fill('#loopA', '26'); await page.fill('#loopB', '-25'); await page.press('#loopB', 'Enter');
+  const lp2 = await ev(() => {
+    const L = __loopsmith, seq = [], lab = () => (L.S.track === 'back' ? document.querySelector(`.lane[data-track="back"] .thumb[data-i="${L.S.curT.back}"] .meta span`).textContent : String(L.S.curT.fwd + 1));
+    for (let k = 0; k < 6; k++) { L.advance(); seq.push(lab()); }
+    return seq.join(',');
+  });
+  check(lp2 === '27,28,-27,-26,-25,26', `loop 26/-25 crosses into the backward strip: ${lp2}`);
+  await page.click('#btnLoop');
+  check(!(await ev(() => __loopsmith.loopRange())) && (await page.locator('.thumb.inloop').count()) === 0, 'loop button turns it off again');
   // a text edit on all frames hits both strips the same way, so they still mirror
   await ev(() => __loopsmith.openPanel('text'));
   await page.click('#xApply'); await page.waitForFunction(() => !__loopsmith.S.busy);

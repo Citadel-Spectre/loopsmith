@@ -50,14 +50,16 @@ textarea { width: 100%; background: var(--bg); border: 1px solid var(--line); co
 #overlay { position: absolute; left: 0; top: 0; }
 #stage.pixel canvas { image-rendering: pixelated; }
 /* player + frame tools bar, right above the strips; the frame tools sit in the middle */
-#player { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: center; padding: 6px 10px;
+#player { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 10px; align-items: center; padding: 6px 10px;
   background: var(--bg2); border-top: 1px solid var(--line); }
 #player > div { display: flex; gap: 4px; align-items: center; min-width: 0; }
-.pl-right { justify-content: flex-end; }
+.pl-center { margin: 0 auto; }
 .pl-center .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin: 0 4px; }
 .pl-center .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 4px; }
 #skipEndsWrap { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; margin: 0 4px; white-space: nowrap; }
-#frameInfo { margin-left: 10px; color: var(--muted); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#frameInfo { margin-left: 14px; color: var(--text); font-variant-numeric: tabular-nums; }
+#frameInfo:empty { display: none; }
+#frameInfo::before { content: "Current: "; color: var(--muted); }
 
 #empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; z-index: 2; background: var(--bg); }
 #empty h1 { margin: 0 0 6px; font-size: 32px; color: var(--accent2); letter-spacing: -.02em; }
@@ -91,7 +93,8 @@ body.drag #empty, body.drag #stage { outline: 3px dashed var(--accent); outline-
 /* in yoyo the rows share the bottom scrollbar */
 #timeline.yoyo .lane[data-track="fwd"] .strip { scrollbar-width: none; }
 #timeline.yoyo .lane[data-track="back"] { border-top: 1px solid var(--line); }
-.diffNav { display: inline-flex; gap: 2px; margin-right: 10px; }
+.diffNav { display: inline-flex; gap: 2px; margin-left: 14px; }
+.diffNav button { padding: 0 8px !important; }
 .diffNav button { padding: 1px 8px; font-size: 11px; border-radius: 10px; color: #ffd166; background: rgba(255,209,102,.1); border-color: rgba(255,209,102,.3); }
 #timeline.yoyo .strip { height: 112px; }
 #timeline.yoyo .playbox { height: 104px; }
@@ -163,3 +166,22 @@ button.primary.active { color: #fff; box-shadow: 0 0 0 2px color-mix(in srgb, va
 .swatches button { display: flex; align-items: center; gap: 8px; text-align: left; }
 .swatches .chips { display: inline-flex; border-radius: 4px; overflow: hidden; border: 1px solid var(--line); }
 .swatches .chips i { width: 10px; height: 16px; display: block; }
+
+/* hide/show button in each frame's meta row, and hidden frames */
+.thumb .meta { align-items: center; }
+.skipBtn { padding: 0 3px; line-height: 0; border: 0; background: transparent; color: var(--muted); border-radius: 4px; }
+.skipBtn:hover:not(:disabled) { color: var(--text); background: var(--bg); border: 0; }
+.thumb.skipped img { filter: grayscale(1); opacity: .3; }
+.thumb.skipped .meta { opacity: .6; text-decoration: line-through; }
+.thumb.skipped .skipBtn { color: var(--accent2); opacity: 1; }
+#player button.icon { padding: 5px 7px; letter-spacing: -1px; }
+
+/* set loop */
+.loopTool { display: inline-flex; align-items: center; gap: 3px; margin-left: 8px; }
+.loopTool input { width: 44px; text-align: center; padding: 4px 2px; font-variant-numeric: tabular-nums; }
+.loopTool input.bad { border-color: var(--danger); }
+.thumb.inloop::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--accent2); opacity: .9; }
+.thumb.loopA::before, .thumb.loopB::before { position: absolute; top: 4px; z-index: 2; font-size: 10px; font-weight: 700; padding: 0 4px; border-radius: 3px;
+  background: var(--accent2); color: #111; }
+.thumb.loopA::before { content: "⟲ start"; left: 4px; }
+.thumb.loopB::before { content: "end"; right: 4px; }

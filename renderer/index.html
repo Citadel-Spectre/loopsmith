@@ -39,6 +39,11 @@
       </div>
       <div class="spacer"></div>
       <div class="group" data-needs-frames>
+        <label class="muted">Zoom <select id="zoom">
+          <option value="fit">Fit</option><option value="0.5">50%</option><option value="1">100%</option><option value="2">200%</option>
+        </select></label>
+      </div>
+      <div class="group" data-needs-frames>
         <button data-panel="export" class="primary">Export</button>
       </div>
     </header>
@@ -71,7 +76,10 @@
         <button id="btnPlay" title="Play / pause (Space)">▶</button>
         <button id="btnNext" title="Next frame (→)">▸</button>
         <button id="btnLast" title="Last frame (End)">⏭</button>
-        <span id="frameInfo"></span>
+        <span class="loopTool" title="Set loop: play only from one frame to another, over and over, without deleting anything. Use the frame numbers on the strip (-5 for a backward frame). L turns it on and off.">
+          <button id="btnLoop" class="toggle">⟲ Loop</button>
+          <input type="text" id="loopA" inputmode="numeric" placeholder="from" spellcheck="false"><span class="muted">/</span><input type="text" id="loopB" inputmode="numeric" placeholder="to" spellcheck="false">
+        </span>
       </div>
       <div class="pl-center">
         <span class="label">Frames</span>
@@ -82,14 +90,12 @@
         <label id="skipEndsWrap" title="Yoyo: don't repeat the first and last frame when turning around, so the motion stays smooth"><input type="checkbox" id="skipEnds" checked> Skip ends</label>
         <button id="btnDup" title="Duplicate the selected frames; each copy goes right after its original (Ctrl+D)">x2</button>
         <button data-act="delete" title="Delete selected (Del)">Delete</button>
+        <button data-act="deleteBefore" class="icon" title="Delete all frames that play before the current one">⇤✕</button>
+        <button data-act="deleteAfter" class="icon" title="Delete all frames that play after the current one">✕⇥</button>
+        <button data-act="deleteHidden" title="Delete every hidden frame">✕ Hidden</button>
+        <button data-act="equalize" title="Yoyo: delete the frames that were deleted on the other strip, so both passes match">Equalize</button>
         <button data-act="moveLeft" title="Move selected left (Alt+←)">◀</button>
         <button data-act="moveRight" title="Move selected right (Alt+→)">▶</button>
-      </div>
-      <div class="pl-right">
-        <span class="diffNav hidden"><button id="diffPrev" title="Previous difference">‹</button><button id="diffInfo" title="Jump to the next frame where the forward and backward rows differ"></button><button id="diffNext" title="Next difference">›</button></span>
-        <label class="muted">Zoom <select id="zoom">
-          <option value="fit">Fit</option><option value="0.5">50%</option><option value="1">100%</option><option value="2">200%</option>
-        </select></label>
       </div>
     </div>
     <footer id="timeline" class="hidden">
@@ -102,7 +108,7 @@
         <div class="playbox"></div>
       </div>
     </footer>
-    <div id="status"><span id="statusText">No frames</span><span id="progressWrap"><span id="progressLabel"></span><progress id="progress" max="1" value="0"></progress></span></div>
+    <div id="status"><span><span id="statusText">No frames</span><span id="frameInfo"></span><span class="diffNav hidden"><button id="diffPrev" title="Previous difference">‹</button><button id="diffInfo" title="Jump to the next frame where the forward and backward rows differ"></button><button id="diffNext" title="Next difference">›</button></span></span><span id="progressWrap"><span id="progressLabel"></span><progress id="progress" max="1" value="0"></progress></span></div>
   </div>
 
   <div id="modal" class="hidden"><div id="modalBox"></div></div>

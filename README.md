@@ -7,6 +7,8 @@ A desktop app for making, editing and converting animated GIFs and webm clips.
 - **Yoyo:** the ⇄ Yoyo button plays forward, then backward. It adds a second strip for the backward pass that you edit on its own; the row that is playing or being edited is highlighted, backward frames are numbered after their sister frame (the one under 5 is -5), both rows share one scrollbar, and the two strips move in tandem and the backward strip is drawn mirrored, so each frame sits directly under its sister frame. The strips scroll one way during the forward pass and the opposite way during the backward pass. Frames where the two passes no longer mirror each other get a badge (+ only in backward, − missing from backward, ⏱ different delay), and the ‹ › buttons on the backward strip jump between them. Where one strip has a frame the other lacks, the other strip shows an empty slot with an arrow (it skips a frame there); drag the frame onto that slot to fill it. "Skip ends" (on by default) keeps the backward pass from repeating the first and last frame; those spots get a skip slot too. Drag frames from one strip onto the other to copy them.
 - **Edit the image:** crop (the box starts at the full picture; drag its edges, corners or the whole box), resize, rotate, flip, add text captions, draw (pen, highlighter, line, arrow, rectangle, ellipse) and add a progress bar.
 - **Export:** GIF (palette and dithering options), animated WebP (lossy or lossless, keeps transparency), webm (VP9, keeps transparency), animated PNG and MP4. Opening a GIF, webm or animated WebP and exporting it as another format converts between them, keeping each frame's timing.
+- **Try before you delete:** the eye button on each frame hides it (greyed out, skipped by playback and export) without removing it; click again to bring it back. `H` does the same for the selection. **✕ Hidden** deletes all hidden frames, **⇤✕ / ✕⇥** delete everything before / after the current frame, and in yoyo **Equalize** deletes on one strip the frames that were deleted on the other.
+- **Set loop:** type two frame numbers in the boxes next to ⟲ Loop (for example 17 and 39, or -20 for a backward frame) and press Enter or the button. Playback then repeats just that stretch, without deleting anything, so you can edit a section and watch it in real time. With the boxes empty, Loop takes the selected frames. `L` turns it on and off.
 - Undo and redo for everything.
 - **Theme:** the Theme button (right of Progress bar) opens a panel with presets and pickers for the backdrop, text, outline and highlight colors. The choice is remembered.
 
@@ -20,6 +22,8 @@ A desktop app for making, editing and converting animated GIFs and webm clips.
 | Home / End | First / last frame |
 | ↑ / ↓ | Switch between the forward and backward strip (yoyo) |
 | Delete | Delete selected frames |
+| H | Hide / show selected frames |
+| L | Set loop on / off |
 | Ctrl+A | Select all |
 | Ctrl+D | Duplicate selection |
 | Ctrl+Z / Ctrl+Y | Undo / redo |
