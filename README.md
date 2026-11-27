@@ -8,6 +8,7 @@ A desktop app for making, editing and converting animated GIFs and webm clips.
 - **Edit the image:** crop (the box starts at the full picture; drag its edges, corners or the whole box), resize, rotate, flip, add text captions, draw (pen, highlighter, line, arrow, rectangle, ellipse) and add a progress bar.
 - **Export:** GIF (palette and dithering options), animated WebP (lossy or lossless, keeps transparency), webm (VP9, keeps transparency), animated PNG and MP4. Opening a GIF, webm or animated WebP and exporting it as another format converts between them, keeping each frame's timing.
 - **Try before you delete:** the eye button on each frame hides it (greyed out, skipped by playback and export) without removing it; click again to bring it back. `H` does the same for the selection. **✕ Hidden** deletes all hidden frames, **⇤✕ / ✕⇥** delete everything before / after the current frame, and in yoyo **Equalize** deletes on one strip the frames that were deleted on the other.
+- **Set loop:** type two frame numbers in the boxes next to ⟲ Loop (for example 17 and 39, or -20 for a backward frame) and press Enter or the button. Playback then repeats just that stretch, without deleting anything, so you can edit a section and watch it in real time. With the boxes empty, Loop takes the selected frames. `L` turns it on and off.
 - Undo and redo for everything.
 - **Theme:** the Theme button (right of Progress bar) opens a panel with presets and pickers for the backdrop, text, outline and highlight colors. The choice is remembered.
 
@@ -22,6 +23,7 @@ A desktop app for making, editing and converting animated GIFs and webm clips.
 | ↑ / ↓ | Switch between the forward and backward strip (yoyo) |
 | Delete | Delete selected frames |
 | H | Hide / show selected frames |
+| L | Set loop on / off |
 | Ctrl+A | Select all |
 | Ctrl+D | Duplicate selection |
 | Ctrl+Z / Ctrl+Y | Undo / redo |

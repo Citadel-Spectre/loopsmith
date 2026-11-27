@@ -341,6 +341,7 @@ function renderStrip() {
     frag.appendChild(Object.assign(document.createElement('div'), { className: 'pad' }));
     strip.appendChild(frag);
   }
+  showLoop();
   const n = diff.list.length;
   $('#diffInfo').textContent = `${n} difference${n > 1 ? 's' : ''}`;
   $('.diffNav').classList.toggle('hidden', !n);
@@ -561,11 +562,86 @@ function step1() {
 /** Next frame in playing order, jumping over hidden ones. */
 function advance() {
   const n = played().length;
+  const L = loopRange();
+  if (L) {
+    // set loop: only frames from L.a to L.b (in playing order) play, then it starts over
+    let pos = posOf(S.track, S.cur);
+    for (let k = 0; k <= L.b - L.a; k++) {
+      pos = pos >= L.a && pos < L.b ? pos + 1 : L.a;
+      const { t, i } = atPos(pos); S.track = t; S.cur = i;
+      if (!S.frames[S.cur].skip) return;
+    }
+    return;
+  }
   for (let k = 0; k < n; k++) { step1(); if (!S.frames[S.cur].skip) return; }
+}
+
+// ---------- set loop ----------
+// Positions count frames in playing order: forward 0..n-1, then the backward strip in yoyo.
+const posOf = (t, i) => (t === 'back' ? S.fwd.length + i : i);
+const atPos = (p) => (p < S.fwd.length ? { t: 'fwd', i: p } : { t: 'back', i: p - S.fwd.length });
+/** Frame number as shown on the strip ("17", or "-17" for a backward frame) -> position, or null. */
+function parseFrameNo(txt) {
+  txt = String(txt).trim().replace('−', '-');
+  if (!/^-?\d+$/.test(txt)) return null;
+  if (txt.startsWith('-')) {
+    if (!S.yoyo || !diff.backLabel) return null;
+    for (const [i, lab] of diff.backLabel) if (lab === txt) return posOf('back', i);
+    return null;
+  }
+  const n = +txt;
+  return n >= 1 && n <= S.fwd.length ? n - 1 : null;
+}
+const loopUI = { on: false };
+/** The active loop as positions {a, b}, or null when it is off or the numbers don't match frames. */
+function loopRange() {
+  if (!loopUI.on) return null;
+  let a = parseFrameNo($('#loopA').value), b = parseFrameNo($('#loopB').value);
+  if (a == null || b == null) return null;
+  if (a > b) [a, b] = [b, a];
+  return { a, b };
+}
+function showLoop() {
+  const okA = parseFrameNo($('#loopA').value) != null || !$('#loopA').value.trim();
+  const okB = parseFrameNo($('#loopB').value) != null || !$('#loopB').value.trim();
+  $('#loopA').classList.toggle('bad', !okA); $('#loopB').classList.toggle('bad', !okB);
+  $('#btnLoop').classList.toggle('active', loopUI.on);
+  const L = loopRange();
+  $$('.thumb').forEach((el) => {
+    const p = posOf(laneOf(el), +el.dataset.i);
+    el.classList.toggle('inloop', !!L && p >= L.a && p <= L.b);
+    el.classList.toggle('loopA', !!L && p === L.a);
+    el.classList.toggle('loopB', !!L && p === L.b);
+  });
+}
+function setLoop(on) {
+  if (on) {
+    // empty boxes: take the selected range, or the current frame to the end
+    if (!$('#loopA').value.trim() || !$('#loopB').value.trim()) {
+      const idx = selIdx();
+      const lab = (i) => (S.track === 'back' ? diff.backLabel.get(i) : String(i + 1));
+      if (idx.length > 1) { $('#loopA').value = lab(idx[0]); $('#loopB').value = lab(idx[idx.length - 1]); }
+      else { $('#loopA').value = lab(S.cur); $('#loopB').value = lab(S.frames.length - 1); }
+    }
+  }
+  loopUI.on = on;
+  const L = loopRange();
+  if (on && !L) { loopUI.on = false; showLoop(); toast('Type two frame numbers from the strip, like 17 and 39'); return; }
+  // jump into the loop if the current frame is outside it
+  if (L) { const p = posOf(S.track, S.cur); if (p < L.a || p > L.b) { const { t, i } = atPos(L.a); S.track = t; S.cur = i; drawCurrent(); } }
+  showLoop();
+}
+$('#btnLoop').onclick = () => setLoop(!loopUI.on);
+for (const id of ['#loopA', '#loopB']) {
+  $(id).addEventListener('input', () => { showLoop(); });
+  $(id).addEventListener('change', () => { if (loopUI.on) setLoop(true); });
+  $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); setLoop(true); e.target.blur(); } });
 }
 function play() {
   if (S.playing || shown().length < 2) return;
   if (!S.frames.length) setTrack('fwd');
+  const L = loopRange();
+  if (L) { const p = posOf(S.track, S.cur); if (p < L.a || p > L.b) { const { t, i } = atPos(L.a); S.track = t; S.cur = i; } }
   if (S.frames[S.cur].skip) advance();
   S.playing = true; $('#btnPlay').textContent = '❚❚';
   const step = () => {
@@ -1574,6 +1650,7 @@ document.addEventListener('keydown', (e) => {
   else if (!S.fwd.length && !S.back.length) return;
   else if (mod && k === 'a') { e.preventDefault(); S.sel = new Set(S.frames.map((f) => f.id)); refresh(); }
   else if (mod && k === 'd') { e.preventDefault(); actions.duplicate(); }
+  else if (!mod && k === 'l') { e.preventDefault(); setLoop(!loopUI.on); }
   else if (!mod && k === 'h') { e.preventDefault(); stopPlay(); toggleSkip(selIdx().map((i) => S.frames[i])); }
   else if (mod && k === 's') { e.preventDefault(); if (S.panel !== 'export') openPanel('export'); }
   else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); actions.delete(); }
@@ -1597,6 +1674,6 @@ document.addEventListener('keydown', (e) => {
 });
 
 // Expose a small hook for automated tests.
-if (api.isTest) window.__loopsmith = { S, toggleSkip, shown, advance, applyTheme, THEMES, setYoyo, setSkipEnds, yoyoDiff, played, mirrorBack, jumpDiff, openFiles, importVideoDialog, importAny, addFrames, actions, panels, openPanel, closePanel, applyPixels, removeDuplicates, undo, redo, refresh };
+if (api.isTest) window.__loopsmith = { S, setLoop, loopRange, toggleSkip, shown, advance, applyTheme, THEMES, setYoyo, setSkipEnds, yoyoDiff, played, mirrorBack, jumpDiff, openFiles, importVideoDialog, importAny, addFrames, actions, panels, openPanel, closePanel, applyPixels, removeDuplicates, undo, redo, refresh };
 
 refresh();

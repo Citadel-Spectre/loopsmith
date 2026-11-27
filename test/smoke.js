@@ -239,6 +239,25 @@ const os = require('os');
   await ev(() => __loopsmith.undo());
   check((await ev(() => __loopsmith.S.fwd.length + '/' + __loopsmith.yoyoDiff().list.length)) === before0.n + '/0', 'undo brings everything back');
   await ev(() => { __loopsmith.S.sel.clear(); __loopsmith.refresh(); });
+  // set loop: 5/9 plays frames 5..9 over and over; a backward number like -20 works too
+  await page.fill('#loopA', '5'); await page.fill('#loopB', '9'); await page.press('#loopB', 'Enter');
+  const lp = await ev(() => {
+    const L = __loopsmith, seq = [];
+    for (let k = 0; k < 7; k++) { L.advance(); seq.push((L.S.track === 'back' ? '-' : '') + (L.S.curT[L.S.track] + 1)); }
+    return { seq: seq.join(','), marked: document.querySelectorAll('.thumb.inloop').length, n: L.S.fwd.length };
+  });
+  check(lp.seq === '6,7,8,9,5,6,7' && lp.marked === 5 && lp.n === before0.n, `loop 5/9 plays ${lp.seq} without removing frames`);
+  await page.waitForTimeout(100);
+  await page.screenshot({ path: path.join(out, '2e-loop.png') });
+  await page.fill('#loopA', '26'); await page.fill('#loopB', '-25'); await page.press('#loopB', 'Enter');
+  const lp2 = await ev(() => {
+    const L = __loopsmith, seq = [], lab = () => (L.S.track === 'back' ? document.querySelector(`.lane[data-track="back"] .thumb[data-i="${L.S.curT.back}"] .meta span`).textContent : String(L.S.curT.fwd + 1));
+    for (let k = 0; k < 6; k++) { L.advance(); seq.push(lab()); }
+    return seq.join(',');
+  });
+  check(lp2 === '27,28,-27,-26,-25,26', `loop 26/-25 crosses into the backward strip: ${lp2}`);
+  await page.click('#btnLoop');
+  check(!(await ev(() => __loopsmith.loopRange())) && (await page.locator('.thumb.inloop').count()) === 0, 'loop button turns it off again');
   // a text edit on all frames hits both strips the same way, so they still mirror
   await ev(() => __loopsmith.openPanel('text'));
   await page.click('#xApply'); await page.waitForFunction(() => !__loopsmith.S.busy);
