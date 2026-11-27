@@ -34,7 +34,9 @@ const other = (t) => (t === 'back' ? 'fwd' : 'back');
 const played = () => (S.yoyo ? S.fwd.concat(S.back) : S.fwd);
 /** Every frame on both strips (pixel-size changes must hit them all). */
 const everything = () => S.fwd.concat(S.back);
-const totalMs = () => played().reduce((a, f) => a + f.delay, 0);
+/** Frames that play and get exported: hidden (skipped) frames are left out. */
+const shown = () => played().filter((f) => !f.skip);
+const totalMs = () => shown().reduce((a, f) => a + f.delay, 0);
 
 const canvas = $('#canvas');
 const ctx = canvas.getContext('2d');
@@ -132,6 +134,11 @@ function refresh() {
   $('#btnRedo').disabled = !S.redo.length;
   $('#btnYoyo').classList.toggle('active', S.yoyo);
   $('#skipEnds').checked = S.skipEnds;
+  if (has) {
+    $('[data-act="deleteHidden"]').disabled = !everything().some((f) => f.skip);
+    const d = S.yoyo ? yoyoDiff() : null;
+    $('[data-act="equalize"]').disabled = !d || !d.list.some((x) => x.kind === 'missing' || x.kind === 'extra');
+  }
   if (!has && S.panel && S.panel !== 'theme') closePanel();
   renderStrip();
   layoutStage();
@@ -147,7 +154,7 @@ function updateStatus() {
   $('#statusText').textContent = `${count} · ${S.w}×${S.h} · ${fmtTime(totalMs())}` + (n > 1 ? ` · ${n} selected` : '');
   const f = S.frames[S.cur];
   const info = $('#frameInfo');
-  info.textContent = f ? (S.track === 'back' ? `${backName(S.cur)} · ${f.delay} ms` : `${S.cur + 1} / ${S.frames.length} · ${f.delay} ms`) : 'Empty strip';
+  info.textContent = f ? (S.track === 'back' ? `${backName(S.cur)} · ${f.delay} ms` : `${S.cur + 1} / ${S.frames.length} · ${f.delay} ms`) + (f.skip ? ' · hidden' : '') : 'Empty strip';
   info.title = f ? (S.yoyo ? (S.track === 'fwd' ? 'Forward ' : 'Backward ') : '') + `frame ${S.cur + 1} of ${S.frames.length}, shown for ${f.delay} ms` : '';
 }
 
@@ -319,11 +326,13 @@ function renderStrip() {
         el.innerHTML = `<span class="skipArrow">${t === 'back' ? '⟵' : '⟶'}</span><span class="skipTxt">skips</span>`;
       } else {
         const f = list[x.i], k = dm.get(f.id);
-        el.className = 'slot thumb' + (S.sel.has(f.id) ? ' sel' : '') + (k ? ' diff diff-' + k : '');
+        el.className = 'slot thumb' + (S.sel.has(f.id) ? ' sel' : '') + (k ? ' diff diff-' + k : '') + (f.skip ? ' skipped' : '');
         el.draggable = true;
         el.dataset.i = x.i;
         if (k) el.title = DIFF_TIP[k];
-        el.innerHTML = `<img loading="lazy" src="${fileUrl(f.path)}"><div class="meta"><span>${t === 'back' ? diff.backLabel.get(x.i) : x.i + 1}</span><span>${f.delay} ms</span></div>` +
+        el.innerHTML = `<img loading="lazy" src="${fileUrl(f.path)}"><div class="meta"><span>${t === 'back' ? diff.backLabel.get(x.i) : x.i + 1}</span>` +
+          `<button class="skipBtn" title="${f.skip ? 'Hidden: playback and export skip this frame. Click to show it again (H)' : 'Hide this frame to see how the animation looks without it (H)'}">${f.skip ? EYE_OFF : EYE}</button>` +
+          `<span>${f.delay} ms</span></div>` +
           (k ? `<span class="badge">${DIFF_BADGE[k]}</span>` : '');
       }
       frag.appendChild(el);
@@ -404,10 +413,30 @@ $('#diffNext').onclick = () => jumpDiff(1);
 $('#btnDup').onclick = () => { stopPlay(); actions.duplicate(); };
 $('#diffInfo').onclick = () => jumpDiff(1);
 
+// ---------- hidden frames ----------
+const EYE = '<svg viewBox="0 0 24 24" width="14" height="14"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>';
+const EYE_OFF = '<svg viewBox="0 0 24 24" width="14" height="14"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 3l18 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>';
+/** Hide or show frames without removing them; hidden frames are skipped in playback and export. */
+function toggleSkip(frames) {
+  if (!frames.length) return;
+  const hide = frames.some((f) => !f.skip); // mixed selection: hide them all
+  commit();
+  updateFrames(new Set(frames.map((f) => f.id)), (f) => ({ ...f, skip: hide || undefined }));
+  refresh();
+}
+timeline.addEventListener('click', (e) => {
+  const b = e.target.closest('.skipBtn'); if (!b) return;
+  e.stopPropagation();
+  const t = b.closest('.thumb'), f = listOf(laneOf(t))[+t.dataset.i];
+  stopPlay();
+  toggleSkip([f]);
+}, true);
+
 // ---------- strip interaction ----------
 const laneOf = (el) => el.closest('.lane')?.dataset.track;
 
 timeline.addEventListener('mousedown', (e) => {
+  if (e.target.closest('.skipBtn')) return;
   const t = e.target.closest('.thumb'); if (!t) return;
   const track = laneOf(t);
   if (track !== S.track) { setTrack(track); if (!(e.ctrlKey || e.metaKey)) S.sel.clear(); }
@@ -524,14 +553,20 @@ timeline.addEventListener('dragend', () => { dragIds = null; clearDrop(); });
 
 // ---------- playback ----------
 let playTimer = null;
-function advance() {
+function step1() {
   if (S.cur + 1 < S.frames.length) { S.cur++; return; }
   if (S.yoyo && listOf(other(S.track)).length) { S.track = other(S.track); S.cur = 0; return; }
   S.cur = 0;
 }
+/** Next frame in playing order, jumping over hidden ones. */
+function advance() {
+  const n = played().length;
+  for (let k = 0; k < n; k++) { step1(); if (!S.frames[S.cur].skip) return; }
+}
 function play() {
-  if (S.playing || played().length < 2) return;
+  if (S.playing || shown().length < 2) return;
   if (!S.frames.length) setTrack('fwd');
+  if (S.frames[S.cur].skip) advance();
   S.playing = true; $('#btnPlay').textContent = '❚❚';
   const step = () => {
     if (!S.playing) return;
@@ -650,6 +685,42 @@ const actions = {
     S.frames = out;
     S.sel = new Set(copies.map((f) => f.id)); S.cur = cur;
     refresh();
+  },
+  /** Delete every hidden frame on both strips. */
+  deleteHidden() {
+    if (!everything().some((f) => f.skip)) return;
+    commit();
+    const keep = (l, t) => { const cur = l[S.curT[t]]; const out = l.filter((f) => !f.skip); S.curT[t] = Math.max(0, cur ? out.findIndex((f) => f.id === cur.id) : 0); return out; };
+    S.fwd = keep(S.fwd, 'fwd'); S.back = keep(S.back, 'back');
+    S.sel.clear(); refresh();
+  },
+  /** Delete all frames before (dir -1) or after (dir 1) the current frame on the strip being edited. */
+  deleteSide(dir) {
+    const n = S.frames.length;
+    if (!n || (dir < 0 && S.cur === 0) || (dir > 0 && S.cur === n - 1)) return;
+    commit();
+    if (dir < 0) { S.frames = S.frames.slice(S.cur); S.cur = 0; } else S.frames = S.frames.slice(0, S.cur + 1);
+    S.sel.clear(); refresh();
+  },
+  deleteBefore() { actions.deleteSide(-1); },
+  deleteAfter() { actions.deleteSide(1); },
+  /** Yoyo: frames deleted on one strip are deleted on the other too, so both passes match again. */
+  equalize() {
+    if (!S.yoyo) return;
+    const d = yoyoDiff();
+    const gone = new Set([...d.fwd].filter(([, k]) => k === 'missing').map(([id]) => id).concat([...d.back].filter(([, k]) => k === 'extra').map(([id]) => id)));
+    if (!gone.size) { toast('The strips already match'); return; }
+    commit();
+    for (const t of ['fwd', 'back']) {
+      const l = listOf(t), cur = l[S.curT[t]];
+      const out = l.filter((f) => !gone.has(f.id));
+      let i = cur ? out.findIndex((f) => f.id === cur.id) : 0;
+      if (i < 0) i = Math.min(out.length - 1, l.slice(0, S.curT[t]).filter((f) => !gone.has(f.id)).length);
+      S.curT[t] = Math.max(0, i);
+      if (t === 'fwd') S.fwd = out; else S.back = out;
+    }
+    S.sel.clear(); refresh();
+    toast(`Deleted ${gone.size} frame${gone.size > 1 ? 's' : ''} so both strips match`);
   },
   moveLeft() { moveSel(-1); },
   moveRight() { moveSel(1); },
@@ -1137,7 +1208,7 @@ panels.progressbar = {
       applyPixels('Adding progress bar', played(), S.w, S.h, (x, img, f) => { x.drawImage(img, 0, 0, S.w, S.h); drawProgress(x, t, ends.get(f.id)); }, true);
     };
   },
-  ends() { const total = totalMs(); let acc = 0; return new Map(played().map((f) => [f.id, (acc += f.delay) / total])); },
+  ends() { const total = totalMs(); let acc = 0; return new Map(played().map((f) => [f.id, (acc += f.skip ? 0 : f.delay) / total])); },
   opts() { return { pos: val('pos'), size: val('size'), color: val('color'), bg: val('bg'), bgColor: val('bgColor') }; },
   overlay(o) { const f = S.frames[S.cur]; if (f) drawProgress(o, this.opts(), this.ends().get(f.id) ?? 0); },
 };
@@ -1221,7 +1292,7 @@ panels.export = {
     this.onInput();
     $('#eGo').onclick = async () => {
       const opts = {
-        frames: played().map((f) => ({ path: f.path, delay: f.delay })),
+        frames: shown().map((f) => ({ path: f.path, delay: f.delay })),
         format: val('format'), colors: +val('colors'), dither: val('dither'), quality: val('quality'), loop: val('loop') ? 0 : -1,
         lossless: val('lossless'),
       };
@@ -1236,8 +1307,9 @@ panels.export = {
   onInput() {
     const f = val('format');
     $$('#panel [data-for]').forEach((d) => d.classList.toggle('hidden', !d.dataset.for.split(' ').includes(f)));
-    const n = played().length;
+    const n = shown().length, hid = played().length - n;
     $('#eInfo').textContent = `${n} frames${S.yoyo ? ' (forward, then backward)' : ''}, ${S.w}×${S.h}, ${fmtTime(totalMs())}.` +
+      (hid ? ` ${hid} hidden frame${hid > 1 ? 's are' : ' is'} left out.` : '') +
       (f === 'gif' ? ' GIF stores delays in 10 ms steps.' : f === 'webp' ? ' Full color and transparency, usually much smaller than GIF.' : '');
     const q = $('#panel [data-k="quality"]'); if (q) q.disabled = f === 'webp' && val('lossless');
   },
@@ -1502,6 +1574,7 @@ document.addEventListener('keydown', (e) => {
   else if (!S.fwd.length && !S.back.length) return;
   else if (mod && k === 'a') { e.preventDefault(); S.sel = new Set(S.frames.map((f) => f.id)); refresh(); }
   else if (mod && k === 'd') { e.preventDefault(); actions.duplicate(); }
+  else if (!mod && k === 'h') { e.preventDefault(); stopPlay(); toggleSkip(selIdx().map((i) => S.frames[i])); }
   else if (mod && k === 's') { e.preventDefault(); if (S.panel !== 'export') openPanel('export'); }
   else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); actions.delete(); }
   else if (e.key === ' ') { e.preventDefault(); S.playing ? stopPlay() : play(); }
@@ -1524,6 +1597,6 @@ document.addEventListener('keydown', (e) => {
 });
 
 // Expose a small hook for automated tests.
-if (api.isTest) window.__loopsmith = { S, applyTheme, THEMES, setYoyo, setSkipEnds, yoyoDiff, played, mirrorBack, jumpDiff, openFiles, importVideoDialog, importAny, addFrames, actions, panels, openPanel, closePanel, applyPixels, removeDuplicates, undo, redo, refresh };
+if (api.isTest) window.__loopsmith = { S, toggleSkip, shown, advance, applyTheme, THEMES, setYoyo, setSkipEnds, yoyoDiff, played, mirrorBack, jumpDiff, openFiles, importVideoDialog, importAny, addFrames, actions, panels, openPanel, closePanel, applyPixels, removeDuplicates, undo, redo, refresh };
 
 refresh();
